@@ -1,26 +1,29 @@
-# --== REFERENCIA ==--
-# https://kifarunix.com/configure-ubuntu-20-04-as-linux-router/
+iptables -A FORWARD -i vmbr1 -o vmbr0 -j ACCEPT
+iptables -A FORWARD -i  vmbr0 -o vmbr1 -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -t nat -A POSTROUTING -o vmbr0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -o vmbr1 -j MASQUERADE
+apt install -y iptables-persistent
+
+# Quitar acceso "publico" a ProxRouter
+iptables -A INPUT -i vmbr1 -p tcp --dport 8006 -j ACCEPT
+iptables -A INPUT -i vmbr1 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -i vmbr0 -p tcp --dport 8006 -j DROP
+iptables -A INPUT -i vmbr0 -p tcp --dport 22 -j DROP
+sh -c "iptables-save > /etc/iptables/rules.v4"
 
 
-sudo sed -i '/net.ipv4.ip_forward/s/^#//' /etc/sysctl.conf
-sudp sysctl -p
-sudo sysctl net.ipv4.ip_forward
-sudo iptables -A FORWARD -i enp2s0 -o enp1s0 -j ACCEPT
-sudo iptables -A FORWARD -i eno1 -o enp1s0 -j ACCEPT
-sudo iptables -A FORWARD -i enp7s0 -o enp1s0 -j ACCEPT
-sudo iptables -A FORWARD -i enp8s0 -o enp1s0 -j ACCEPT
-sudo iptables -A FORWARD -i enp9s0 -o enp1s0 -j ACCEPT 
-sudo iptables -A FORWARD -i  enp1s0 -o enp2s0 -m state --state RELATED,ESTABLISHED -j ACCEPT
-sudo iptables -A FORWARD -i  enp1s0 -o eno1 -m state --state RELATED,ESTABLISHED -j ACCEPT
-sudo iptables -A FORWARD -i  enp1s0 -o enp7s0 -m state --state RELATED,ESTABLISHED -j ACCEPT
-sudo iptables -A FORWARD -i  enp1s0 -o enp8s0 -m state --state RELATED,ESTABLISHED -j ACCEPT
-sudo iptables -A FORWARD -i  enp1s0 -o enp9s0 -m state --state RELATED,ESTABLISHED -j ACCEPT
-sudo iptables -t nat -A POSTROUTING -o enp1s0 -j MASQUERADE
-sudo iptables -t nat -A POSTROUTING -o enp2s0 -j MASQUERADE
-sudo iptables -t nat -A POSTROUTING -o eno1 -j MASQUERADE
-sudo iptables -t nat -A POSTROUTING -o enp7s0 -j MASQUERADE
-sudo iptables -t nat -A POSTROUTING -o enp8s0 -j MASQUERADE
-sudo iptables -t nat -A POSTROUTING -o enp9s0 -j MASQUERADE
-sudo apt install -y iptables-persistent
-sudo apt install -y unattended-upgrades
-sudo dpkg-reconfigure --priority=low unattended-upgrades
+##Redirigir el puerto 22 del WAN (vmbr0) al puerto 22 del LAN (vmbr1) para la IP 10.10.10.x:
+iptables -t nat -A PREROUTING -i vmbr0 -p tcp --dport 22 -j DNAT --to-destination 10.10.10.x:22
+iptables -A FORWARD -p tcp -d 10.10.10.x --dport 22 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+
+##Redirigir el rango de puertos 8080-8084 del WAN (vmbr0) al mismo rango de puertos del LAN (vmbr1) para la IP 10.10.10.x:
+iptables -t nat -A PREROUTING -i vmbr0 -p tcp --dport 8080:8084 -j DNAT --to-destination 10.10.10.x
+iptables -A FORWARD -p tcp -d 10.10.10.x --dport 8080:8084 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+
+##Después de agregar estas reglas, no olvides guardarlas para que persistan tras un reinicio:
+sh -c "iptables-save > /etc/iptables/rules.v4"
+
+
+#Revertir el mapeo de puertos
+iptables -t nat -D PREROUTING -i vmbr0 -p tcp --dport 22 -j DNAT --to-destination 10.10.10.x:22
+iptables -D FORWARD -p tcp -d 10.10.10.x --dport 22 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
